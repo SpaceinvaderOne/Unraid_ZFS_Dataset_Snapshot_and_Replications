@@ -15,7 +15,7 @@ This script is designed for Unraid servers version 6.12 and above, leveraging th
 - **Live Data Replication:** The script can replicate (backup) live data, such as Unraid docker appdata, without the need to stop the containers before backup.
 - **Safety Checks:** The script is equipped with numerous safety checks to ensure smooth operation.
 - **Notifications:** Users are informed of successes and errors through the Unraid notification system, which includes GUI and any other notifications the user may have set up.
-- **Audible Tunes for Notifications:** If a beep speaker is present in the server, the script can provide audible notifications:
+- **Audible Tunes for Notifications:** If a beep speaker is present in the server, the script can provide optional audible notifications:
   - **Success in Snapshotting:** Plays the old Nokia ring tone.
   - **Success in Replication:** Plays the Mario achievement tune.
   - **Errors:** Plays the Star Wars Imperial march.
