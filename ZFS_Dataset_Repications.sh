@@ -12,7 +12,7 @@
 #
 #Unraid notifications during process (sent to Unraid gui etc)
 notification_type="all"  # set to "all" for both success & failure, to "error"for only failure or "none" for no notices to be sent.
-notify_tune="yes"  # as well as a notifiction if a sucess will play the mario "achievment tune" or failure starwars imperial march tune on beep speaker.
+notify_tune="yes"  # as well as a notifiction, if sucessful it will play the Mario "achievment tune" or failure StarWars imperial march tune on beep speaker!
                    # sometimes good to have an audiable notification!! Set to "no" for silence. (this function your server needs a beep speaker)
 #
 ####################
@@ -24,9 +24,9 @@ source_dataset="dataset_name"   #this is the name of the dataset you want to sna
 ####################
 #
 #zfs snapshot settings
-autosnapshots="yes" # set to "yes" to have script auto snapshot your source dataset
+autosnapshots="yes" # set to "yes" to have script auto snapshot your source dataset. Set to "no" to skip snapshotting.
 #
-#snapshot retention policy
+#snapshot retention policy (default below works well, but change to suit)
 snapshot_hours="0"
 snapshot_days="7"
 snapshot_weeks="4"
@@ -35,7 +35,7 @@ snapshot_years="0"
 #
 ####################
 #
-# remote server variables (leave as is if not backing up to another server)
+# remote server variables (leave as is (set to "no") if not backing up to another server)
 destination_remote="no" # set to "no" for local backup to "yes" for a remote backup (remote location should be accessable paired with ssh with shared keys)
 remote_user="root"  #remote user (an Unraid server will be root)
 remote_server="10.10.20.197" #remote servers name or ip
@@ -386,7 +386,7 @@ rsync_replication() {
         do_rsync() {
             local snapshot_mount_point="$1"
             local rsync_destination="$2"
-            local relative_dataset_path="$3"  # New parameter to accommodate child datasets
+            local relative_dataset_path="$3"  #  parameter to accommodate child datasets
             #
             # find the most recent backup directory for the --link-dest parameter
             local previous_backup
