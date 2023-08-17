@@ -392,6 +392,8 @@ rsync_replication() {
             local previous_backup
             if [ "$rsync_type" = "incremental" ]; then
                 if [ "$destination_remote" = "yes" ]; then
+                echo "Running: ssh "${remote_user}@${remote_server}" "ls -t \"${destination_rsync_location}\" | head -n 1""
+
                     # get the name of the most recent directory on remote location
                     previous_backup=$(ssh "${remote_user}@${remote_server}" "ls -t \"${destination_rsync_location}\" | head -n 1")
                 else
@@ -413,7 +415,10 @@ rsync_replication() {
                 # Create the remote directory 
                 [ "$rsync_type" = "incremental" ] && ssh "${remote_user}@${remote_server}" "mkdir -p \"${rsync_destination}\""
                 # Rsync the snapshot to the remote destination with link-dest
-                rsync -azv --delete $link_dest -e ssh "${snapshot_mount_point}/" "${remote_user}@${remote_server}:${rsync_destination}/"
+                #rsync -azvvv --delete $link_dest -e ssh "${snapshot_mount_point}/" "${remote_user}@${remote_server}:${rsync_destination}/"
+                echo "Executing remote rsync: rsync -azvh --delete $link_dest -e ssh \"${snapshot_mount_point}/\" \"${remote_user}@${remote_server}:${rsync_destination}/\""
+rsync -azvh --delete $link_dest -e ssh "${snapshot_mount_point}/" "${remote_user}@${remote_server}:${rsync_destination}/"
+
                 if [ $? -ne 0 ]; then
                     unraid_notify "Rsync replication failed from source: ${source_path} to remote destination: ${remote_user}@${remote_server}:${rsync_destination}" "failure"
                     return 1
@@ -422,7 +427,10 @@ rsync_replication() {
                 # Ensure the backup directory exists
                 [ "$rsync_type" = "incremental" ] && mkdir -p "${rsync_destination}"
                 # Rsync the snapshot to the local destination with link-dest
-                rsync -avv --delete $link_dest "${snapshot_mount_point}/" "${rsync_destination}/"
+              #  rsync -avv --delete $link_dest "${snapshot_mount_point}/" "${rsync_destination}/"
+              echo "Executing local rsync: rsync -avh --delete $link_dest \"${snapshot_mount_point}/\" \"${rsync_destination}/\""
+rsync -avh --delete $link_dest "${snapshot_mount_point}/" "${rsync_destination}/"
+
                 if [ $? -ne 0 ]; then
                     unraid_notify "Rsync replication failed from source: ${source_path} to local destination: ${rsync_destination}" "failure"
                     return 1
