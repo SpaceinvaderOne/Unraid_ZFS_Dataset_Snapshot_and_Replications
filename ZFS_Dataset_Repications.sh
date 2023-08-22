@@ -367,15 +367,26 @@ zfs_replication() {
 #
 ####################
 #
-# This function does the rsync replication
+# These below functions do the rsync replication
+#
+# Gets the most recent backup to compare against (used by below funcrions)
+get_previous_backup() {
+    if [ "$rsync_type" = "incremental" ]; then
+        if [ "$destination_remote" = "yes" ]; then
+            echo "Running: ssh ${remote_user}@${remote_server} \"ls ${destination_rsync_location} | sort -r | head -n 2 | tail -n 1\""
+            previous_backup=$(ssh "${remote_user}@${remote_server}" "ls \"${destination_rsync_location}\" | sort -r | head -n 2 | tail -n 1")
+        else
+            previous_backup=$(ls "${destination_rsync_location}" | sort -r | head -n 2 | tail -n 1)
+        fi
+    fi
+}
 #
 rsync_replication() {
+    local previous_backup  # declare variable 
+
     IFS=$'\n'
-    #
     if [ "$replication" = "rsync" ]; then
         local snapshot_name="rsync_snapshot"
-        #
-        # get the destination directory based on rsync type
         if [ "$rsync_type" = "incremental" ]; then
             backup_date=$(date +%Y-%m-%d_%H:%M)
             destination="${destination_rsync_location}/${backup_date}"
@@ -386,28 +397,11 @@ rsync_replication() {
         do_rsync() {
             local snapshot_mount_point="$1"
             local rsync_destination="$2"
-            local relative_dataset_path="$3"  #  parameter to accommodate child datasets
-            #
-            # find the most recent backup directory for the --link-dest parameter
-            local previous_backup
-            if [ "$rsync_type" = "incremental" ]; then
-                if [ "$destination_remote" = "yes" ]; then
-                echo "Running: ssh "${remote_user}@${remote_server}" "ls -t \"${destination_rsync_location}\" | head -n 1""
-
-                    # get the name of the most recent directory on remote location
-                    previous_backup=$(ssh "${remote_user}@${remote_server}" "ls -t \"${destination_rsync_location}\" | head -n 1")
-                else
-                    # get the name of the most recent directory on local location
-                   previous_backup=$(ls -t "${destination_rsync_location}" | head -n 1)
-                fi
-            fi
-            #
-            # Construct link-dest path
+            local relative_dataset_path="$3"
+            get_previous_backup
             local link_dest_path="${destination_rsync_location}/${previous_backup}${relative_dataset_path}"
-            #
-            # Check if previous_backup is set and not empty
             [ -z "$previous_backup" ] && local link_dest="" || local link_dest="--link-dest=${link_dest_path}"
-            #
+            echo "Link dest value is: $link_dest"
             # Log the link_dest value for debugging
             echo "Link dest value is: $link_dest"
             #
@@ -476,10 +470,11 @@ rsync -avh --delete $link_dest "${snapshot_mount_point}/" "${rsync_destination}/
         fi
     fi
 }
+
 #
 ########################################
 #
-# run the above functions
+# run the above functions 
 pre_run_checks
 create_sanoid_config
 autosnap
