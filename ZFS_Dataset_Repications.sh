@@ -1,7 +1,7 @@
 #!/bin/bash
 #set -x
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# #   Script for snapshoting and/or replication a zfs dataset locally or remotely using zfs or rsync dependimg on the destination         # #
+# #   Script for snapshoting and/or replication a zfs dataset locally or remotely using zfs or rsync depending on the destination         # #
 # #   (needs Unraid 6.12 or above)                                                                                                        # #
 # #   by - SpaceInvaderOne                                                                                                                # # 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
