@@ -479,6 +479,6 @@ rsync -avh --delete $link_dest "${snapshot_mount_point}/" "${rsync_destination}/
 pre_run_checks
 create_sanoid_config
 autosnap
+autoprune
 rsync_replication
 zfs_replication
-autoprune
