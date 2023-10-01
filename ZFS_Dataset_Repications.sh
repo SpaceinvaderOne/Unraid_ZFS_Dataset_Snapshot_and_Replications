@@ -337,6 +337,7 @@ zfs_replication() {
     case "${syncoid_mode}" in
       "strict-mirror")
         syncoid_flags+=("--force-delete")
+        syncoid_flags+=("--delete-target-snapshots")
         ;;
       "basic")
         # No additional flags other than -r
@@ -478,6 +479,6 @@ rsync -avh --delete $link_dest "${snapshot_mount_point}/" "${rsync_destination}/
 pre_run_checks
 create_sanoid_config
 autosnap
+autoprune
 rsync_replication
 zfs_replication
-autoprune
