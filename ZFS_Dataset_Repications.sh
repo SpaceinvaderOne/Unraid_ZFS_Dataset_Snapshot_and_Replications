@@ -50,9 +50,11 @@ replication="zfs"   #this is set to the method for how you want to have the sour
 # zfs replication variables. You do NOT need these if replication set to "rsync" or "none"
 destination_pool="dest_zfs_pool_name"  #this is the zpool in which your destination dataset will be created
 parent_destination_dataset="dest_dataset_name" #this is the parent dataset in which a child dataset will be created containing the replicated data (zfs replication)
-lock_mysql_containers="yes"  #if set to "yes" then the script will flush and lock all mysql/mariadb containers before doing zfs snapshot of the source dataset
+lock_sql_containers="yes"    #if set to "yes" then the script will flush and lock all mysql/mariadb/postgres containers before doing zfs snapshot of the source dataset
                              #MySQL containers should contain the lable "zfs.snapshot.mysql=yes"
                              #Also, MYSQL_ROOT_PASSWORD environment variable should be set for such containers either by environment variable(--env,-e) or by a file(--env-file)
+                             #Postgres containers should contain the lable "zfs.snapshot.postgres=yes"
+                             #Also, POSTGRES_USER and POSTGRES_PASSWORD environment variables should be set for such containers either by environment variable(--env,-e) or by a file(--env-file)
 # For ZFS replication syncoid is used. The below variable sets some options for that.
 # "strict-mirror" Strict mirroring that both mirrors the source and repairs mismatches (uses --force-delete flag).This will delete snapshots in the destination which are not in the source.
 # "basic" Basic replication without any additional flags will not delete snapshots in destination if not in the source
@@ -74,7 +76,9 @@ sanoid_config_dir="/mnt/user/system/sanoid/"
 sanoid_config_complete_path="$sanoid_config_dir""$source_pool"_"$source_dataset"/
 
 zfs_mysql_container_label="zfs.snapshot.mysql"
-declare -A locked_containers=()
+zfs_postgres_container_label="zfs.snapshot.postgres"
+declare -A locked_mysql_containers=()
+locked_postgres_containers=()
 #
 ####################
 #
@@ -282,7 +286,7 @@ autosnap() {
   # check if autosnapshots is set to "yes" before creating snapshots
   if [[ "${autosnapshots}" == "yes" ]]; then
 
-    flush_and_lock_mysql_containers
+    flush_and_lock_sql_containers
 
     # Create the snapshots on the source directory using Sanoid if required
     echo "creating the automatic snapshots using sanoid based off retention policy"
@@ -296,7 +300,7 @@ autosnap() {
       unraid_notify "Automatic snapshot creation using Sanoid failed for source: ${source_path}" "failure"
     fi
 
-    unlock_mysql_containers
+    unlock_sql_containers
   #
   else
     echo "Autosnapshots are not set to 'yes', skipping..."
@@ -485,14 +489,19 @@ rsync -avh --delete $link_dest "${snapshot_mount_point}/" "${rsync_destination}/
 #
 ####################
 #
-# This fuction will find all MySQL containers and lock them until zfs snapshot is finidhed.
-flush_and_lock_mysql_containers() {
-  if [[ "${lock_mysql_containers}" == "yes" ]]; then
-    find_mysql_containers
+# This fuction will find all MySQL and PostgreSQL containers and lock them until zfs snapshot is finidhed.
+flush_and_lock_sql_containers() {
+  if [[ "${lock_sql_containers}" == "yes" ]]; then
+    find_sql_containers
 
-    for key in "${!locked_containers[@]}"; do
+    for key in "${!locked_mysql_containers[@]}"; do
       echo "Locking MySQL database inside the container '${key}' ..."
-      docker exec "$key" bash -c "MYSQL_PWD=\$MYSQL_ROOT_PASSWORD mysql -uroot -e \"flush tables with read lock; DO SLEEP(33);\"" &
+      # Try a flush first without locking so the later flush with lock
+      # goes faster.  This may not be needed as it seems to interfere with
+      # some statements anyway.
+      docker exec "$key" bash -c "MYSQL_PWD=\$MYSQL_ROOT_PASSWORD mysql -uroot -e \"flush local tables;\""
+      # Get a lock on the entire database
+      docker exec "$key" bash -c "MYSQL_PWD=\$MYSQL_ROOT_PASSWORD mysql -uroot -e \"flush local tables with read lock; DO SLEEP(33);\"" &
       disown
       sleep 2
 
@@ -501,20 +510,29 @@ flush_and_lock_mysql_containers() {
       if [[ ${#sleep_process_id} == 0 ]]; then
         echo "MySQL database inside the container '$key' wasn't locked! ZFS snapshot of this container might be broken."
       else
-        locked_containers[$key]=$sleep_process_id
+        locked_mysql_containers[$key]=$sleep_process_id
         echo "The lock successfully acquired. Container '${key}', processId=$sleep_process_id."
       fi
     done
+
+    for postgres_container_name in "${locked_postgres_containers[@]}"; do
+      echo "Locking Postgres database inside the container $postgres_container_name ..."
+
+      # Get a lock on the entire database
+      docker exec "$postgres_container_name" bash -c "PGPASSWORD=\$POSTGRES_PASSWORD PGUSER=\$POSTGRES_USER psql postgres -c \"select pg_start_backup('zfs_wal_archive',true);\""
+      echo "The lock successfully acquired. Container '$postgres_container_name'."
+    done
+
   fi
 }
 #
 ####################
 #
-# This fuction will unlock all locked MySQL containers.
-unlock_mysql_containers() {
-  if [[ "${lock_mysql_containers}" == "yes" ]]; then
-    for key in "${!locked_containers[@]}"; do
-      local sleep_process_id="${locked_containers[$key]}"
+# This fuction will unlock all locked MySQL and PostgreSQL containers.
+unlock_sql_containers() {
+  if [[ "${lock_sql_containers}" == "yes" ]]; then
+    for key in "${!locked_mysql_containers[@]}"; do
+      local sleep_process_id="${locked_mysql_containers[$key]}"
       if [[ $sleep_process_id == -1 ]]; then
         continue
       fi
@@ -529,13 +547,20 @@ unlock_mysql_containers() {
         echo "Sleeping process wasn't terminated. Database is still locked, container '$key', locking processId=$sleep_process_id"
       fi
     done
+
+    for postgres_container_name in "${locked_postgres_containers[@]}"; do
+      echo "Unlocking Postgres database inside the container $postgres_container_name ..."
+
+      docker exec "$postgres_container_name" bash -c "PGPASSWORD=\$POSTGRES_PASSWORD PGUSER=\$POSTGRES_USER psql postgres -c \"select pg_stop_backup();\""
+      echo "PostgreSQL database inside container '$postgres_container_name' has been successfully unlocked."
+    done
   fi
 }
 #
 ####################
 #
-# This fuction will find all labeled MySQL containers which are mounted to the source dataset.
-find_mysql_containers() {
+# This fuction will find all labeled MySQL and PostgreSQL containers which are mounted to the source dataset.
+find_sql_containers() {
   for container in $(docker ps -q); do
     local container_name
     container_name=$(docker container inspect --format '{{.Name}}' "$container" | cut -c 2-)
@@ -545,13 +570,12 @@ find_mysql_containers() {
       continue
     fi
 
-    local mysql_label
-    mysql_label="$(docker container inspect -f '{{ index .Config.Labels "'$zfs_mysql_container_label'" }}' "$container")"
-    if [[ "$mysql_label" != "yes" ]]; then
-      continue
+    if [[ "$(docker container inspect -f '{{ index .Config.Labels "'$zfs_mysql_container_label'" }}' "$container")" == "yes" ]]; then
+      locked_mysql_containers["$container_name"]=-1
+    elif [[ "$(docker container inspect -f '{{ index .Config.Labels "'$zfs_postgres_container_label'" }}' "$container")" == "yes" ]]; then
+      locked_postgres_containers+=("$container_name")
     fi
-
-    locked_containers["$container_name"]=-1
+    
   done
 }
 #
