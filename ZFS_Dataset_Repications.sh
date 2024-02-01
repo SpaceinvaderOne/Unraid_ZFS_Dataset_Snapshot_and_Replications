@@ -67,15 +67,6 @@ syncoid_mode="strict-mirror"
 parent_destination_folder="/mnt/user/rsync_backup" # This is the parent directory in which a child directory will be created containing the replicated data (rsync)
 rsync_type="incremental" # set to "incremental" for dated incremental backups or "mirror" for mirrored backups
 #
-####################################################################################################
-#
-#Advanced variables you do not need to change these.
-source_path="$source_pool"/"$source_dataset"
-zfs_destination_path="$destination_pool"/"$parent_destination_dataset"/"$source_pool"_"$source_dataset"
-destination_rsync_location="$parent_destination_folder"/"$source_pool"_"$source_dataset"
-sanoid_config_dir="/mnt/user/system/sanoid/"
-sanoid_config_complete_path="$sanoid_config_dir""$source_pool"_"$source_dataset"/
-#
 ####################
 #
 # This function is to send messages to Unraid gui etc
