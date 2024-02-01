@@ -478,13 +478,88 @@ rsync -avh --delete $link_dest "${snapshot_mount_point}/" "${rsync_destination}/
     fi
 }
 
+####################
+#
+# Update configs for specific dataset
+#
+update_paths() {
+    local source_dataset_name="$1"
+
+    source_dataset=$source_dataset_name
+    source_path="$source_pool"/"$source_dataset"
+    zfs_destination_path="$destination_pool"/"$parent_destination_dataset"/"$source_pool"_"$source_dataset"
+    destination_rsync_location="$parent_destination_folder"/"$source_pool"_"$source_dataset"
+    sanoid_config_complete_path="$sanoid_config_dir""$source_pool"_"$source_dataset"/
+}
+#
+####################
+#
+# These below functions do run the above functions for each selected dataset
+#
+run_for_each_dataset() {
+
+    declare -a dataset_names
+
+    if [[ "$source_dataset_auto_select" == "no" ]]; then
+        # add only given dataset to array
+        dataset_names=("$source_dataset")
+    else
+        # Überprüfen, ob ein Ausschluss-Präfix angegeben wurde und entsprechend filtern
+        if [[ -z "$source_dataset_auto_select_exclude_prefix" ]]; then
+    	    # select all datasets
+              while IFS= read -r line; do
+      	    dataset_name=$(echo "$line" | awk -F'/' '{print $NF}') # Extrahiere den reinen Dataset-Namen
+          	if [[ ! " ${source_dataset_auto_select_excludes[@]} " =~ " ${dataset_name} " ]]; then
+      	        # add dataset to array
+  	        dataset_names+=("$line")
+      	    else
+      	        echo "Exclude dataset $dataset_name"
+      	    fi
+          done < <(zfs list -r -o name -H $source_pool | awk -F'/' -v pool="$source_pool" '($0 ~ pool && NF==2) {print $2}')
+        else
+    	    # select datasets without exclutions
+    	    echo "Skip datasets which names starting with {$source_dataset_auto_select_exclude_prefix}"
+              while IFS= read -r line; do
+          	dataset_name=$(echo "$line" | awk -F'/' '{print $NF}') # Extrahiere den reinen Dataset-Namen
+      	    if [[ ! " ${source_dataset_auto_select_excludes[@]} " =~ " ${dataset_name} " ]]; then
+  	        # add dataset to array
+  	        dataset_names+=("$line")
+  	    else
+  	        echo "Exclude dataset $dataset_name"
+  	    fi
+          done < <(zfs list -r -o name -H $source_pool | awk -F'/' -v pool="$source_pool" -v prefix="$source_dataset_auto_select_exclude_prefix" '($0 ~ pool && NF==2 && $2 !~ ("^" prefix)) {print $2}')
+        fi
+    fi
+    echo "Selected datasets:"
+    printf '%s\n' "${dataset_names[@]}"
+
+    for source_dataset_name in "${dataset_names[@]}"; do
+      update_paths $source_dataset_name
+      echo "do pre_run_checks for $source_dataset_name"
+      pre_run_checks
+      echo "do create_sanoid_config for $source_dataset_name"
+      create_sanoid_config
+    done
+
+    for source_dataset_name in "${dataset_names[@]}"; do
+      update_paths $source_dataset_name
+      echo "do autosnap for $source_dataset_name"
+      autosnap
+    done
+
+    for source_dataset_name in "${dataset_names[@]}"; do
+      update_paths $source_dataset_name
+      echo "do autoprune for $source_dataset_name"
+      autoprune
+      echo "do rsync_replication for $source_dataset_name"
+      rsync_replication
+      echo "do zfs_replication for $source_dataset_name"
+      zfs_replication
+    done
+}
+
 #
 ########################################
 #
-# run the above functions 
-pre_run_checks
-create_sanoid_config
-autosnap
-autoprune
-rsync_replication
-zfs_replication
+# run main function
+run_for_each_dataset
