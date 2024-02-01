@@ -20,6 +20,12 @@ notify_tune="yes"  # as well as a notifiction, if sucessful it will play the Mar
 source_pool="source_zfs_pool_name"  #this is the zpool in which your source dataset resides (note the does NOT start with /mnt/)
 source_dataset="dataset_name"   #this is the name of the dataset you want to snapshot and/or replicate
                                 #If using auto snapshots souce pool CAN NOT contain spaces. This is because sanoid config doesnt handle them
+source_dataset_auto_select="no"  # set to "no" to only backup the source_dataset or to "yes" to automatically select all datasets to snapshot and/or replicate
+source_dataset_auto_select_exclude_prefix="backup_"	# exclude specific datasets by name starting with this prefix. A empty value will ignore this parameter
+source_dataset_auto_select_excludes=(
+	# datasets to exclude for automatic selection
+	"excluded_dataset"
+)
 #
 ####################
 #
