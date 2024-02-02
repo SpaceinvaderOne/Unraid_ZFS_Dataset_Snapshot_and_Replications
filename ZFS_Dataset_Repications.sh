@@ -389,7 +389,7 @@ rsync_replication() {
     if [ "$replication" = "rsync" ]; then
         local snapshot_name="rsync_snapshot"
         if [ "$rsync_type" = "incremental" ]; then
-            backup_date=$(date +%Y-%m-%d_%H:%M)
+            backup_date=$(date +%Y-%m-%d_%H%M)
             destination="${destination_rsync_location}/${backup_date}"
         else
             destination="${destination_rsync_location}"
