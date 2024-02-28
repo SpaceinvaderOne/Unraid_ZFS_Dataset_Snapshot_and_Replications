@@ -336,8 +336,7 @@ zfs_replication() {
     local -a syncoid_flags=("-r")
     case "${syncoid_mode}" in
       "strict-mirror")
-        syncoid_flags+=("--force-delete")
-        syncoid_flags+=("--delete-target-snapshots")
+       syncoid_flags+=("--delete-target-snapshots" "--force-delete")
         ;;
       "basic")
         # No additional flags other than -r
