@@ -48,6 +48,12 @@ To effectively utilize the script, you need to configure the main user-defined v
 
 - **`source_dataset=`**: Name of the dataset you intend to snapshot and/or replicate. If using auto snapshots, ensure the source_pool does not contain spaces due to Sanoid configuration limitations. If not using autosnapshots, source_dataset can contain spaces.
 
+- **`source_dataset_auto_select=`**: This option determines whether to automatically select datasets within the specified source_pool for snapshotting and replication. Set to yes to enable automatic selection of all datasets under the pool, or no to only process the dataset specified in source_dataset. Automatic selection is useful for comprehensive data protection strategies.
+
+- **`source_dataset_auto_select_exclude_prefix=`**: Use this parameter to exclude datasets with names starting with a specific prefix from automatic selection. This is helpful when you have temporary or non-essential datasets in the same pool that do not require snapshotting and replication. Leaving this value empty means no datasets will be excluded based on their name prefix.
+
+- **`source_dataset_auto_select_excludes=`**: Define an array of dataset names to be excluded from automatic snapshot and replication processes. This option offers fine-grained control over which datasets to ignore, allowing you to exclude specific datasets that may not need to be included in your data protection routine.
+
 ### Snapshot Settings
 
 - **`autosnapshots=`**: Set to "yes" to enable automatic snapshotting of your source_dataset. Set to "no" for no snapshotting (if you only want replication)
