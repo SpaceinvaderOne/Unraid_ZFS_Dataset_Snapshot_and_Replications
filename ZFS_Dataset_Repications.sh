@@ -20,6 +20,12 @@ notify_tune="yes"  # as well as a notifiction, if sucessful it will play the Mar
 source_pool="source_zfs_pool_name"  #this is the zpool in which your source dataset resides (note the does NOT start with /mnt/)
 source_dataset="dataset_name"   #this is the name of the dataset you want to snapshot and/or replicate
                                 #If using auto snapshots souce pool CAN NOT contain spaces. This is because sanoid config doesnt handle them
+source_dataset_auto_select="no"  # Set to "no" to snapshot and replicate only the specified source_dataset, "yes" to auto-select all datasets for these operations
+source_dataset_auto_select_exclude_prefix="backup_"	# Prefix to exclude certain datasets from auto-selection. Leave empty to disable exclusion
+source_dataset_auto_select_excludes=(
+	# List of dataset names to be excluded from auto-selection for snapshotting and replication
+	"excluded_dataset"
+)
 #
 ####################
 #
@@ -60,15 +66,6 @@ syncoid_mode="strict-mirror"
 # rsync replication variables. You do not need these if replication set to zfs or no
 parent_destination_folder="/mnt/user/rsync_backup" # This is the parent directory in which a child directory will be created containing the replicated data (rsync)
 rsync_type="incremental" # set to "incremental" for dated incremental backups or "mirror" for mirrored backups
-#
-####################################################################################################
-#
-#Advanced variables you do not need to change these.
-source_path="$source_pool"/"$source_dataset"
-zfs_destination_path="$destination_pool"/"$parent_destination_dataset"/"$source_pool"_"$source_dataset"
-destination_rsync_location="$parent_destination_folder"/"$source_pool"_"$source_dataset"
-sanoid_config_dir="/mnt/user/system/sanoid/"
-sanoid_config_complete_path="$sanoid_config_dir""$source_pool"_"$source_dataset"/
 #
 ####################
 #
@@ -276,7 +273,7 @@ autosnap() {
   # check if autosnapshots is set to "yes" before creating snapshots
   if [[ "${autosnapshots}" == "yes" ]]; then
     # Create the snapshots on the source directory using Sanoid if required
-    echo "creating the automatic snapshots using sanoid based off retention policy"
+    echo "creating the automatic snapshots of ${source_path} using sanoid based off retention policy"
     /usr/local/sbin/sanoid --configdir="${sanoid_config_complete_path}" --take-snapshots
     #
     # check the exit status of the sanoid command 
@@ -298,7 +295,7 @@ autosnap() {
 autoprune() {
   # rheck if autosnapshots is set to "yes" before creating snapshots
   if [[ "${autosnapshots}" == "yes" ]]; then
-   echo "pruning the automatic snapshots using sanoid based off retention policy"
+   echo "pruning the automatic snapshots of ${source_path} using sanoid based off retention policy"
 # run Sanoid to prune snapshots based on retention policy
 /usr/local/sbin/sanoid --configdir="${sanoid_config_complete_path}" --prune-snapshots
   else
@@ -471,13 +468,92 @@ rsync -avh --delete $link_dest "${snapshot_mount_point}/" "${rsync_destination}/
     fi
 }
 
+####################
+#
+# Update configs for specific dataset
+#
+update_paths() {
+    local source_dataset_name="$1"
+
+    source_dataset=$source_dataset_name
+    source_path="$source_pool"/"$source_dataset"
+    zfs_destination_path="$destination_pool"/"$parent_destination_dataset"/"$source_pool"_"$source_dataset"
+    destination_rsync_location="$parent_destination_folder"/"$source_pool"_"$source_dataset"
+    sanoid_config_complete_path="$sanoid_config_dir""$source_pool"_"$source_dataset"/
+}
+#
+####################
+#
+# This function iterates over selected datasets to perform snapshotting and replication tasks
+#
+run_for_each_dataset() {
+
+  # Array to hold dataset names for processing
+  declare -a dataset_names
+
+  if [[ "$source_dataset_auto_select" == "no" ]]; then
+    # Directly use the specified dataset if auto-selection is disabled
+    selected_source_datasets=("$source_dataset")
+  else
+    # Filter datasets based on exclusion rules if auto-selection is enabled
+    if [[ -z "$source_dataset_auto_select_exclude_prefix" ]]; then
+      # Select all datasets if no exclusion prefix is specified
+      while IFS= read -r line; do
+        # Extract dataset name
+        dataset_name=$(echo "$line" | awk -F'/' '{print $NF}')
+        if [[ ! " ${source_dataset_auto_select_excludes[@]} " =~ " ${dataset_name} " ]]; then
+          # Add dataset to the list if not excluded
+          selected_source_datasets+=("$line")
+        else
+          echo "Exclude dataset $dataset_name"
+        fi
+        done < <(zfs list -r -o name -H $source_pool | awk -F'/' -v pool="$source_pool" '($0 ~ pool && NF==2) {print $2}')
+    else
+      # Exclude datasets starting with the specified prefix
+      echo "Skipping datasets with names starting with {$source_dataset_auto_select_exclude_prefix}"
+      while IFS= read -r line; do
+        # Extract dataset name
+        dataset_name=$(echo "$line" | awk -F'/' '{print $NF}')
+        if [[ ! " ${source_dataset_auto_select_excludes[@]} " =~ " ${dataset_name} " ]]; then
+          # Add dataset to the list if not excluded
+          selected_source_datasets+=("$line")
+      else
+        echo "Exclude dataset $dataset_name"
+      fi
+      done < <(zfs list -r -o name -H $source_pool | awk -F'/' -v pool="$source_pool" -v prefix="$source_dataset_auto_select_exclude_prefix" '($0 ~ pool && NF==2 && $2 !~ ("^" prefix)) {print $2}')
+    fi
+  fi
+  echo "Selected datasets:"
+  printf '%s\n' "${selected_source_datasets[@]}"
+
+  # Perform pre-run checks, create sanoid configs, snapshot, prune, and replicate for each selected dataset.
+  for source_dataset_name in "${selected_source_datasets[@]}"; do
+    update_paths $source_dataset_name
+    echo "Performing pre-run checks for $source_dataset_name"
+    pre_run_checks
+    echo "Creating sanoid config for $source_dataset_name"
+    create_sanoid_config
+  done
+
+  for source_dataset_name in "${selected_source_datasets[@]}"; do
+    update_paths $source_dataset_name
+    echo "Performing autosnapshot for $source_dataset_name"
+    autosnap
+  done
+
+  for source_dataset_name in "${selected_source_datasets[@]}"; do
+    update_paths $source_dataset_name
+    echo "Performing autoprune for $source_dataset_name"
+    autoprune
+    echo "Performing rsync replication for $source_dataset_name"
+    rsync_replication
+    echo "Performing ZFS replication for $source_dataset_name"
+    zfs_replication
+  done
+}
+
 #
 ########################################
 #
-# run the above functions 
-pre_run_checks
-create_sanoid_config
-autosnap
-autoprune
-rsync_replication
-zfs_replication
+# Execute the main function to start the process
+run_for_each_dataset
