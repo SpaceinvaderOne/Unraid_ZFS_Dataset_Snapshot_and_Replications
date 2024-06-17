@@ -45,6 +45,7 @@ snapshot_years="0"
 destination_remote="no" # set to "no" for local backup to "yes" for a remote backup (remote location should be accessable paired with ssh with shared keys)
 remote_user="root"  #remote user (an Unraid server will be root)
 remote_server="10.10.20.197" #remote servers name or ip
+remote_port="22" #remote server port
 #
 ####################
 #
@@ -167,7 +168,7 @@ pre_run_checks() {
   if [ "$destination_remote" = "yes" ]; then
     echo "Replication target is a remote server. I will check it is available..."
     # Attempt an SSH connection. If it fails, print an error message and exit.
-    if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "${remote_user}@${remote_server}" echo 'SSH connection successful' &>/dev/null; then
+    if ! ssh -p "${remote_port}" -o BatchMode=yes -o ConnectTimeout=5 "${remote_user}@${remote_server}" echo 'SSH connection successful' &>/dev/null; then
       msg='SSH connection failed. Please check your remote server details and ensure ssh keys are exchanged.'
       echo "$msg"
       unraid_notify "$msg" "failure"
@@ -313,7 +314,7 @@ zfs_replication() {
     if [ "$destination_remote" = "yes" ]; then
       destination="${remote_user}@${remote_server}:${zfs_destination_path}"
       # check if the parent destination ZFS dataset exists on the remote server. If not, create it.
-      ssh "${remote_user}@${remote_server}" "if ! zfs list -o name -H '${destination_pool}/${parent_destination_dataset}' &>/dev/null; then zfs create '${destination_pool}/${parent_destination_dataset}'; fi"
+      ssh -p "${remote_port}" "${remote_user}@${remote_server}" "if ! zfs list -o name -H '${destination_pool}/${parent_destination_dataset}' &>/dev/null; then zfs create '${destination_pool}/${parent_destination_dataset}'; fi"
       if [ $? -ne 0 ]; then
         unraid_notify "Failed to check or create ZFS dataset on remote server: ${destination}" "failure"
         return 1
@@ -331,6 +332,9 @@ zfs_replication() {
     fi
     # calc which syncoid flags to use, based on syncoid_mode
     local -a syncoid_flags=("-r")
+    if [ "$destination_remote" = "yes" ]; then
+       syncoid_flags+=("-sshport" "${remote_port}")
+    fi
     case "${syncoid_mode}" in
       "strict-mirror")
        syncoid_flags+=("--delete-target-snapshots" "--force-delete")
@@ -370,8 +374,8 @@ zfs_replication() {
 get_previous_backup() {
     if [ "$rsync_type" = "incremental" ]; then
         if [ "$destination_remote" = "yes" ]; then
-            echo "Running: ssh ${remote_user}@${remote_server} \"ls ${destination_rsync_location} | sort -r | head -n 2 | tail -n 1\""
-            previous_backup=$(ssh "${remote_user}@${remote_server}" "ls \"${destination_rsync_location}\" | sort -r | head -n 2 | tail -n 1")
+            echo "Running: ssh -p ${remote_port} ${remote_user}@${remote_server} \"ls ${destination_rsync_location} | sort -r | head -n 2 | tail -n 1\""
+            previous_backup=$(ssh -p "${remote_port}" "${remote_user}@${remote_server}" "ls \"${destination_rsync_location}\" | sort -r | head -n 2 | tail -n 1")
         else
             previous_backup=$(ls "${destination_rsync_location}" | sort -r | head -n 2 | tail -n 1)
         fi
@@ -404,11 +408,11 @@ rsync_replication() {
             #
             if [ "$destination_remote" = "yes" ]; then
                 # Create the remote directory 
-                [ "$rsync_type" = "incremental" ] && ssh "${remote_user}@${remote_server}" "mkdir -p \"${rsync_destination}\""
+                [ "$rsync_type" = "incremental" ] && ssh -p "${remote_port}" "${remote_user}@${remote_server}" "mkdir -p \"${rsync_destination}\""
                 # Rsync the snapshot to the remote destination with link-dest
-                #rsync -azvvv --delete $link_dest -e ssh "${snapshot_mount_point}/" "${remote_user}@${remote_server}:${rsync_destination}/"
-                echo "Executing remote rsync: rsync -azvh --delete $link_dest -e ssh \"${snapshot_mount_point}/\" \"${remote_user}@${remote_server}:${rsync_destination}/\""
-rsync -azvh --delete $link_dest -e ssh "${snapshot_mount_point}/" "${remote_user}@${remote_server}:${rsync_destination}/"
+                #rsync -azvvv --delete $link_dest -e ssh -p "${remote_port}" "${snapshot_mount_point}/" "${remote_user}@${remote_server}:${rsync_destination}/"
+                echo "Executing remote rsync: rsync -azvh --delete $link_dest -e ssh -p \"${remote_port}\" \"${snapshot_mount_point}/\" \"${remote_user}@${remote_server}:${rsync_destination}/\""
+                rsync -azvh --delete $link_dest -e ssh -p "${remote_port}" "${snapshot_mount_point}/" "${remote_user}@${remote_server}:${rsync_destination}/"
 
                 if [ $? -ne 0 ]; then
                     unraid_notify "Rsync replication failed from source: ${source_path} to remote destination: ${remote_user}@${remote_server}:${rsync_destination}" "failure"
