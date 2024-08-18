@@ -39,6 +39,8 @@ snapshot_weeks="4"
 snapshot_months="3"
 snapshot_years="0"
 #
+#sanoid config dir (you should not need to edit this)
+sanoid_config_dir="/etc/sanoid/"
 ####################
 #
 # remote server variables (leave as is (set to "no") if not backing up to another server)
@@ -246,9 +248,22 @@ create_sanoid_config() {
     cp /etc/sanoid/sanoid.defaults.conf "${sanoid_config_complete_path}sanoid.defaults.conf"
   fi
   #
-  # check if a configuration file has already been created from a previous run, if so exit the function
+  # check if a configuration file has already been created from a previous run, if so update any settings if necessary
   if [ -f "${sanoid_config_complete_path}sanoid.conf" ]; then
-    return
+      update_setting() {
+          local key=$1 new_value=$2 current_value
+          current_value=$(grep "^$key = " "${sanoid_config_complete_path}sanoid.conf" | awk -F ' = ' '{print $2}')
+          if [[ "$current_value" != "$new_value" ]]; then
+              sed -i "s/^$key = .*/$key = $new_value/" "${sanoid_config_complete_path}sanoid.conf"
+              echo "[CONFIG CHANGE] Updated '$key' to '$new_value' in '${sanoid_config_complete_path}sanoid.conf'."
+          fi
+      }
+      update_setting "hourly" "$snapshot_hours"
+      update_setting "daily" "$snapshot_days"
+      update_setting "weekly" "$snapshot_weeks"
+      update_setting "monthly" "$snapshot_months"
+      update_setting "yearly" "$snapshot_years"
+      return
   fi
 #
 # this  creates the new configuration file based off variables for retention
