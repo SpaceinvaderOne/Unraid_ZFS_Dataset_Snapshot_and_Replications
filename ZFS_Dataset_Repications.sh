@@ -60,6 +60,12 @@ parent_destination_dataset="dest_dataset_name" #this is the parent dataset in wh
 # "strict-mirror" Strict mirroring that both mirrors the source and repairs mismatches (uses --force-delete flag).This will delete snapshots in the destination which are not in the source.
 # "basic" Basic replication without any additional flags will not delete snapshots in destination if not in the source
 syncoid_mode="strict-mirror"
+# When replicating encrypted datasets, syncoid will decrypt the data on the origin and send it to the destination. 
+# If the destination is also encrypted, it will be re-encrypted using the destination's settings for key, algorithm, etc.
+# If the destination is unencrypted, the data will be stored unencrypted as well.
+# Selecting "yes" here will force syncoid to ask ZFS for the raw encrypted data stream, allowing for both slightly faster transfers as well as zero-knowledge replication.
+# The destination data will remain encrypted with the original key. Unless the destination also has this key, this preserves data secrecy.
+syncoid_send_encrypted_raw="no" 
 #
 ##########
 #
@@ -343,6 +349,9 @@ zfs_replication() {
         exit 1
         ;;
     esac
+    if [ "${syncoid_send_encrypted_raw}" = "yes" ] && [ "$(zfs list -H -o encryption ${source_path})" != "off" ]; then
+        syncoid_flags+=("--sendoptions" "w")
+    fi
     #
     # Use syncoid to replicate snapshot to the destination dataset
     echo "Starting ZFS replication using syncoid with mode: ${syncoid_mode}"
